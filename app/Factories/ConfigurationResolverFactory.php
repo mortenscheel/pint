@@ -4,6 +4,7 @@ namespace App\Factories;
 
 use App\Project;
 use App\Repositories\ConfigurationJsonRepository;
+use App\Repositories\NativeConfigurationRepository;
 use ArrayIterator;
 use PhpCsFixer\Config;
 use PhpCsFixer\Console\ConfigurationResolver;
@@ -33,44 +34,58 @@ class ConfigurationResolverFactory
     public static function fromIO($input, $output)
     {
         $path = Project::paths($input);
+        if ($input->getOption('native')) {
+            $nativeConfiguration = resolve(NativeConfigurationRepository::class);
+            $resolver = new ConfigurationResolver(
+                $nativeConfiguration->get(), [
+                    'diff' => $output->isVerbose(),
+                    'dry-run' => $input->getOption('test'),
+                    'path' => $path,
+                    'stop-on-violation' => false,
+                    'verbosity' => $output->getVerbosity(),
+                    'show-progress' => 'true',
+                ],
+                Project::path(),
+                new ToolInfo()
+            );
+        } else {
+            $localConfiguration = resolve(ConfigurationJsonRepository::class);
 
-        $localConfiguration = resolve(ConfigurationJsonRepository::class);
+            $preset = $localConfiguration->preset();
 
-        $preset = $localConfiguration->preset();
-
-        if (! in_array($preset, static::$presets)) {
-            abort(1, 'Preset not found.');
+            if (! in_array($preset, static::$presets)) {
+                abort(1, 'Preset not found.');
+            }
+            $resolver = new ConfigurationResolver(
+                new Config('default'),
+                [
+                    'allow-risky' => 'yes',
+                    'config' => implode(DIRECTORY_SEPARATOR, [
+                        dirname(__DIR__, 2),
+                        'resources',
+                        'presets',
+                        sprintf('%s.php', $preset),
+                    ]),
+                    'diff' => $output->isVerbose(),
+                    'dry-run' => $input->getOption('test'),
+                    'path' => $path,
+                    'path-mode' => ConfigurationResolver::PATH_MODE_OVERRIDE,
+                    'cache-file' => $localConfiguration->cacheFile() ?? implode(DIRECTORY_SEPARATOR, [
+                        realpath(sys_get_temp_dir()),
+                        md5(
+                            app()->isProduction()
+                                ? implode('|', $path)
+                                : (string) microtime()
+                        ),
+                    ]),
+                    'stop-on-violation' => false,
+                    'verbosity' => $output->getVerbosity(),
+                    'show-progress' => 'true',
+                ],
+                Project::path(),
+                new ToolInfo(),
+            );
         }
-
-        $resolver = new ConfigurationResolver(
-            new Config('default'),
-            [
-                'allow-risky' => 'yes',
-                'config' => implode(DIRECTORY_SEPARATOR, [
-                    dirname(__DIR__, 2),
-                    'resources',
-                    'presets',
-                    sprintf('%s.php', $preset),
-                ]),
-                'diff' => $output->isVerbose(),
-                'dry-run' => $input->getOption('test'),
-                'path' => $path,
-                'path-mode' => ConfigurationResolver::PATH_MODE_OVERRIDE,
-                'cache-file' => $localConfiguration->cacheFile() ?? implode(DIRECTORY_SEPARATOR, [
-                    realpath(sys_get_temp_dir()),
-                    md5(
-                        app()->isProduction()
-                        ? implode('|', $path)
-                        : (string) microtime()
-                    ),
-                ]),
-                'stop-on-violation' => false,
-                'verbosity' => $output->getVerbosity(),
-                'show-progress' => 'true',
-            ],
-            Project::path(),
-            new ToolInfo(),
-        );
 
         $totalFiles = count(new ArrayIterator(iterator_to_array(
             $resolver->getFinder(),

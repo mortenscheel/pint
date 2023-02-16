@@ -6,6 +6,7 @@ use App\Contracts\PathsRepository;
 use App\Project;
 use App\Repositories\ConfigurationJsonRepository;
 use App\Repositories\GitPathsRepository;
+use App\Repositories\NativeConfigurationRepository;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Console\Input\InputInterface;
 
@@ -41,6 +42,12 @@ class RepositoriesServiceProvider extends ServiceProvider
             return new GitPathsRepository(
                 Project::path(),
             );
+        });
+
+        $this->app->singleton(NativeConfigurationRepository::class, function () {
+            $input = resolve(InputInterface::class);
+
+            return new NativeConfigurationRepository($input->getOption('config') ?: Project::path().'/.php-cs-fixer.dist.php');
         });
     }
 }
